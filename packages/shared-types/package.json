@@ -1,0 +1,29 @@
+{
+  "name": "@gearblindbox/shared-types",
+  "version": "0.1.0",
+  "description": "前后端共享的 TypeScript 类型定义(装备/组合/API 契约),对应 docs/03-spec/DATA-MODEL.md 与 docs/03-spec/API-SPEC.md",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -w -p tsconfig.json",
+    "lint": "eslint . -c ../../eslint.config.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

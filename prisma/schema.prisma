@@ -1,0 +1,81 @@
+// Prisma Schema
+// 对应 docs/03-spec/DATA-MODEL.md 第 3 节"运行时数据实体"。
+// GearItem / ScoreWeightConfig / ConfigManifest 属于配置数据(见 DATA-MODEL.md 第 2 节),
+// 存放于 configs/game-data 的版本化 JSON 文件中,不在此建表。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// 一次抽取的完整记录,存储装备快照而非引用,保证历史结果不受后续配置变更影响。
+/// 见 DATA-MODEL.md 3.1 节。
+model DrawRecord {
+  id          String @id @default(uuid())
+  anonymousId String @map("anonymous_id")
+  sessionId   String @map("session_id")
+
+  /// 抽取发生时生效的配置版本号(快照依据)
+  configVersion String @map("config_version")
+
+  /// 四个槶位的装备快照(完整复制当时的 GearItem 内容)
+  weaponItem   Json @map("weapon_item")
+  helmetItem   Json @map("helmet_item")
+  armorItem    Json @map("armor_item")
+  operatorItem Json @map("operator_item")
+
+  weaponScore   Int @map("weapon_score")
+  helmetScore   Int @map("helmet_score")
+  armorScore    Int @map("armor_score")
+  operatorScore Int @map("operator_score")
+  totalScore    Int @map("total_score")
+
+  /// 用户当时设定的评分区间,为空表示未设定(全区间随机)
+  selectedMinScore Int? @map("selected_min_score")
+  selectedMaxScore Int? @map("selected_max_score")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("draw_records")
+  @@index([anonymousId, createdAt])
+  @@index([createdAt])
+}
+
+/// 埋点原始事件,见 DATA-MODEL.md 3.2 节 与 docs/03-spec/ANALYTICS-SPEC.md。
+model AnalyticsEvent {
+  id          String @id @default(uuid())
+  eventName   String @map("event_name")
+  anonymousId String @map("anonymous_id")
+  sessionId   String @map("session_id")
+
+  /// 结构随 eventName 不同而不同,见 ANALYTICS-SPEC.md 第 3 节事件清单
+  properties Json? @map("properties")
+
+  /// 原始 IP 不落库,只存哈希值(隐私合规要求,见 ANALYTICS-SPEC.md 第 6 节)
+  ipHash    String? @map("ip_hash")
+  userAgent String? @map("user_agent")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("analytics_events")
+  @@index([anonymousId, createdAt])
+  @@index([eventName, createdAt])
+}
+
+/// 每日聚合指标,由定时任务写入,见 DATA-MODEL.md 3.3 节 与 ANALYTICS-SPEC.md 第 1/5 节口径定义。
+model DailyMetricSummary {
+  date DateTime @id @db.Date
+
+  pv                    Int @map("pv")
+  uv                    Int @map("uv")
+  drawCount             Int @map("draw_count")
+  newVisitorCount       Int @map("new_visitor_count")
+  returningVisitorCount Int @map("returning_visitor_count")
+  d1RetainedCount       Int @map("d1_retained_count")
+
+  @@map("daily_metric_summaries")
+}

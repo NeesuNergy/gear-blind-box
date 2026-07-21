@@ -1,0 +1,15 @@
+{
+  "versionTag": "2026.07",
+  "items": [
+    {
+      "id": "weapon_example_placeholder",
+      "category": "weapon",
+      "name": "示例占位武器(请替换为真实数据)",
+      "baseScore": 50,
+      "rarity": "common",
+      "weight": 1,
+      "description": "工程骨架阶段的模板条目,用于跑通配置加载与 Schema 校验流程。正式录入武器数据前请将 enabled 保持为 false 或直接替换本条目。",
+      "enabled": false
+    }
+  ]
+}

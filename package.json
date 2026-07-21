@@ -1,0 +1,50 @@
+{
+  "name": "gearblindbox",
+  "version": "0.1.0",
+  "private": true,
+  "description": "《三角洲行动》社区玩法工具站 —— 随机装备抽取 + 组合评分 + 数据化运营",
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "dev:web": "pnpm --filter @gearblindbox/web dev",
+    "dev:api": "pnpm --filter @gearblindbox/api dev",
+    "build": "pnpm -r --if-present run build",
+    "lint": "pnpm -r --if-present run lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "test": "pnpm -r --if-present run test",
+    "config:validate": "tsx scripts/validate-game-config.ts",
+    "db:generate": "pnpm --filter @gearblindbox/api run db:generate",
+    "db:migrate:dev": "pnpm --filter @gearblindbox/api run db:migrate:dev",
+    "db:studio": "pnpm --filter @gearblindbox/api run db:studio",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.5.0",
+    "@commitlint/config-conventional": "^19.5.0",
+    "@eslint/js": "^9.15.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "eslint": "^9.15.0",
+    "eslint-config-prettier": "^9.1.0",
+    "globals": "^15.12.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.10",
+    "prettier": "^3.3.3",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.15.0"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  }
+}
