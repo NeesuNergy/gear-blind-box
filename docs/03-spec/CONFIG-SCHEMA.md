@@ -1,186 +1,93 @@
-# 配置文件规范
+# 配置数据规范
 
-> 版本:v0.1 最后更新:2026-07-21
-> 目的:定义装备/干员配置数据的目录结构、Schema、版本发布与校验流程,使"游戏版本更新导致的分数调整"成为一次纯数据变更,不牵涉业务代码。
+> 版本:v0.3 最后更新:2026-07-22
+> 目的:定义官方装备/干员配置在数据库中的结构、维护流程与校验约束,使"游戏版本更新导致的分数调整"成为一次纯数据变更,不牵涉业务代码。并约定后续用户自定义方案的扩展边界,避免日后重构抽取链路。
 
-## 1. 目录结构
+## 1. 存储模型总览
 
 ```
-configs/
-└── game-data/
-    ├── manifest.json                  # 版本清单,指向当前生效版本
-    ├── weights/
-    │   ├── 2026.07.json                # 该版本对应的评分权重配置
-    │   └── ...
-    ├── weapons/
-    │   ├── 2026.07.json
-    │   └── ...
-    ├── helmets/
-    │   ├── 2026.07.json
-    │   └── ...
-    ├── armors/
-    │   ├── 2026.07.json
-    │   └── ...
-    └── operators/
-        ├── 2026.07.json
-        └── ...
+PostgreSQL
+├── gear_items              # 官方默认池:武器/头盔/护甲/干员(权威分数与属性)
+├── score_weight_configs    # 官方评分权重(单例行 id = "official")
+└── config_revisions        # 官方配置版本标签(单例行 id = "official")
 ```
 
-- 每个类别(武器/头盔/护甲/干员/权重)独立按版本号存放文件,允许**只更新某一类别**而不动其他类别(例如某次更新只削弱了几把武器,不需要重新发布干员配置)。
-- `manifest.json` 决定"当前生效版本",支持每个类别指向不同版本号(见 2.3 节),以支持颗粒度更细的发布节奏。
+- **官方默认配置的唯一真相源是数据库**,不再使用 `configs/game-data/*.json`。
+- 运行时 `GearConfigService` 只从 DB 读取官方配置,组装为 `EffectivePool` 后交给 `scoring-engine`。
+- 初始/开发环境通过 `prisma/seed.ts` 写入占位或真实数据;生产环境改分走 SQL / 管理后台(后者为后续版本),不通过改仓库 JSON。
+- `config_revisions.versionTag` 是全局官方版本标签,用途:
+  1. Redis 预筛索引缓存的失效 key(见 `ARCHITECTURE.md`);
+  2. 写入 `DrawRecord.configVersion`,用于按"强度调整前后"做数据分析。
+- **历史抽取结果不受配置更新影响**,由 `DrawRecord` 的装备快照机制保证(见 `DATA-MODEL.md`),与配置存在文件还是数据库无关。
 
-## 2. Schema 定义
+### 1.1 与后续"用户方案"的边界(预留,本期不实现)
 
-### 2.1 装备/干员条目 Schema(weapons / helmets / armors / operators 通用)
+| 层级     | 存什么                                        | 谁维护    | 能否改分数      |
+| -------- | --------------------------------------------- | --------- | --------------- |
+| 官方默认 | 全量条目 + `baseScore` + 权重                 | 运营/开发 | ✅ 唯一可改分处 |
+| 用户方案 | 相对官方默认的**排除列表**(`excludedItemIds`) | 登录用户  | ❌ 不可改分     |
 
-```json
-{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "GearItemList",
-  "type": "object",
-  "required": ["versionTag", "items"],
-  "properties": {
-    "versionTag": { "type": "string", "pattern": "^\\d{4}\\.\\d{2}(\\.\\d+)?$" },
-    "items": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "type": "object",
-        "required": ["id", "category", "name", "baseScore", "enabled"],
-        "properties": {
-          "id": { "type": "string", "pattern": "^[a-z]+_[a-z0-9_]+$" },
-          "category": { "type": "string", "enum": ["weapon", "helmet", "armor", "operator"] },
-          "subCategory": { "type": "string" },
-          "name": { "type": "string", "minLength": 1 },
-          "baseScore": { "type": "integer", "minimum": 0, "maximum": 100 },
-          "rarity": { "type": "string", "enum": ["common", "rare", "epic", "legendary"] },
-          "weight": { "type": "number", "exclusiveMinimum": 0, "default": 1 },
-          "imageUrl": { "type": "string" },
-          "description": { "type": "string" },
-          "enabled": { "type": "boolean" }
-        },
-        "additionalProperties": false
-      }
-    }
-  },
-  "additionalProperties": false
-}
+运行时公式(未来):
+
+```text
+EffectivePool = officialItems
+  .filter(item => item.enabled)
+  .filter(item => !userScheme.excludedItemIds.includes(item.id))
 ```
 
-> 注:文件内不重复存储 `versionTag` 到每个 item 上(item 级别的 `versionTag` 由加载器根据文件所属版本自动补充),避免冗余字段导致的一致性风险。
+V0.1 无用户方案时:`EffectivePool = officialItems.filter(enabled)`。抽取服务必须按"有效池"编程,禁止写死"永远等于全表"。
 
-### 2.2 权重配置 Schema(weights)
+分享码(未来):指向用户方案记录或其排除列表编码,**不复制分数**;导入方始终使用当前官方分数。
 
-```json
-{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "ScoreWeightConfig",
-  "type": "object",
-  "required": ["versionTag", "weaponWeight", "helmetWeight", "armorWeight", "operatorWeight"],
-  "properties": {
-    "versionTag": { "type": "string" },
-    "weaponWeight": { "type": "number", "minimum": 0, "maximum": 1 },
-    "helmetWeight": { "type": "number", "minimum": 0, "maximum": 1 },
-    "armorWeight": { "type": "number", "minimum": 0, "maximum": 1 },
-    "operatorWeight": { "type": "number", "minimum": 0, "maximum": 1 }
-  },
-  "additionalProperties": false
-}
-```
+## 2. 表级字段约束
 
-**额外的语义校验(Schema 无法直接表达,需在加载器代码中实现,并有对应单元测试):**
+字段定义以 `DATA-MODEL.md` 为准,本节补充**库内约束与语义校验**。
 
-- `weaponWeight + helmetWeight + armorWeight + operatorWeight` 必须等于 `1`(允许 ±0.001 浮点误差)。
-- 同一文件内所有 `item.id` 必须唯一。
-- `enabled: false` 的条目允许分数缺失合理性检查放宽(即历史下架条目不强制要求分数落在"参考区间"内),但字段本身仍必须存在。
+### 2.1 `gear_items`
 
-### 2.3 版本清单 Schema(manifest.json)
+| 约束        | 说明                                                                           |
+| ----------- | ------------------------------------------------------------------------------ |
+| `id` 主键   | 格式建议 `{category}_{slug}`,如 `weapon_ak12`;应用层校验 `^[a-z]+_[a-z0-9_]+$` |
+| `category`  | 枚举:`weapon` / `helmet` / `armor` / `operator`                                |
+| `baseScore` | 整数 0–100                                                                     |
+| `rarity`    | 可选枚举:`common` / `rare` / `epic` / `legendary`                              |
+| `weight`    | 可选,默认 1,必须 `> 0`                                                         |
+| `enabled`   | `false` 表示官方下架,不进入默认有效池                                          |
 
-```json
-{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "ConfigManifest",
-  "type": "object",
-  "required": ["activeVersions", "history"],
-  "properties": {
-    "activeVersions": {
-      "type": "object",
-      "required": ["weapons", "helmets", "armors", "operators", "weights"],
-      "properties": {
-        "weapons": { "type": "string" },
-        "helmets": { "type": "string" },
-        "armors": { "type": "string" },
-        "operators": { "type": "string" },
-        "weights": { "type": "string" }
-      },
-      "additionalProperties": false
-    },
-    "history": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["category", "versionTag", "publishedAt", "note"],
-        "properties": {
-          "category": { "type": "string" },
-          "versionTag": { "type": "string" },
-          "publishedAt": { "type": "string", "format": "date" },
-          "note": { "type": "string" }
-        }
-      }
-    }
-  }
-}
-```
+同表内 `id` 全局唯一(主键已保证)。
 
-示例:
+### 2.2 `score_weight_configs`
 
-```json
-{
-  "activeVersions": {
-    "weapons": "2026.07.1",
-    "helmets": "2026.07",
-    "armors": "2026.07",
-    "operators": "2026.07",
-    "weights": "2026.07"
-  },
-  "history": [
-    {
-      "category": "weapons",
-      "versionTag": "2026.07",
-      "publishedAt": "2026-07-01",
-      "note": "初始配置"
-    },
-    {
-      "category": "weapons",
-      "versionTag": "2026.07.1",
-      "publishedAt": "2026-07-15",
-      "note": "版本更新:AK12 削弱 baseScore 75→65,新增 M4A1 冲锋枪型"
-    }
-  ]
-}
-```
+- 官方权重使用固定主键 `id = "official"`(单例)。
+- `weaponWeight + helmetWeight + armorWeight + operatorWeight` 必须等于 `1`(允许 ±0.001)。
+- 四项均在 `[0, 1]`。
+
+### 2.3 `config_revisions`
+
+- 官方版本使用固定主键 `id = "official"`(单例)。
+- `versionTag` 格式建议 `^\d{4}\.\d{2}(\.\d+)?$`(如 `2026.07`、`2026.07.1`)。
+- **任何对官方条目分数/上下架/权重的实质变更,都必须同步 bump `versionTag`**,否则 Redis 缓存可能继续使用旧索引。
 
 ## 3. 配置变更 SOP(标准操作流程)
 
-1. **确定变更范围**:本次是新增条目、调整分数,还是新版本上线导致的批量调整?只改动涉及的类别文件,不必所有类别同步发新版本。
-2. **新增文件而非覆盖旧文件**:在对应类别目录下新增 `{新版本号}.json` 文件,旧版本文件保留(用于历史记录追溯与 `DrawRecord` 快照校验)。
-3. **更新 `manifest.json`**:将对应类别的 `activeVersions` 指向新版本号,并在 `history` 追加一条记录,`note` 字段必须写明变更原因(便于后续追溯"为什么这把武器分数变了")。
-4. **提交 PR 走代码评审**:配置变更走与代码变更相同的 Git 流程(分支 + PR + Review),不允许直接改主分支。
-5. **CI 自动校验**(合并前必须通过):
-   - JSON Schema 校验(2.1/2.2/2.3 节定义的结构)。
-   - 权重之和为 1 的语义校验。
-   - `id` 唯一性校验。
-   - `manifest.json` 中引用的版本号必须存在对应文件(不能指向不存在的版本)。
-6. **发布后缓存失效**:后端加载新配置后,需要主动失效 `ARCHITECTURE.md` 中提到的 Redis 预筛索引缓存,避免评分区间抽取仍使用旧配置计算的索引。
+1. **确定变更范围**:新增条目、调分、下架(`enabled=false`),或改权重。
+2. **写入数据库**:通过 seed 更新(开发期)、迁移脚本、或后续管理后台修改对应行。
+3. **bump `config_revisions.versionTag`**:有实质影响的变更必须更新。
+4. **校验**:本地/CI 跑 `pnpm config:validate`(校验 seed 数据与约束);有真实库环境时可用集成测试再验一轮权重之和。
+5. **发布后缓存失效**:后端感知到新 `versionTag` 后,失效 Redis 预筛索引缓存。
+6. **追溯**:改库操作应留下可审计记录——开发期靠 Git 中的 seed/迁移 diff + commit message;上线管理后台后靠操作日志表(后续再定)。
 
 ## 4. AI Agent 操作约束
 
-- AI Agent 在处理"武器加强/削弱""新增装备/干员"类需求时,**只允许新增配置文件 + 更新 manifest**,禁止直接修改历史版本文件的数值(历史版本文件应视为不可变的存档)。
-- AI Agent 生成的任何配置变更,必须同步生成/更新对应的 CI 校验测试用例(如新增了新的 `category` 枚举值,必须先更新本文件的 Schema 定义,再改代码里的枚举类型)。
-- 若需求中出现本文件未覆盖的字段诉求(例如要给武器加"配件槽位"字段),必须先在本文件补充 Schema 定义并说明用途,再进行编码实现。
+- 处理"武器加强/削弱""新增装备/干员"时,**改数据库相关定义与 seed/迁移数据**,禁止再引入 `configs/game-data` JSON 作为真相源。
+- 禁止为了"保留历史"去复制整表多版本官方配置;历史结果靠 `DrawRecord` 快照。
+- 不得实现"用户改 baseScore";用户方案若落地,只允许排除条目。
+- 若需新增字段(如配件槽位),必须先改 `DATA-MODEL.md` 与本文件,再改 Prisma / shared-types。
 
 ## 5. 变更记录
 
-| 日期       | 版本 | 说明                           |
-| ---------- | ---- | ------------------------------ |
-| 2026-07-21 | v0.1 | 初版配置 Schema 与发布流程定义 |
+| 日期       | 版本 | 说明                                                                           |
+| ---------- | ---- | ------------------------------------------------------------------------------ |
+| 2026-07-21 | v0.1 | 初版:按版本号拆分的 JSON 文件 + manifest                                       |
+| 2026-07-22 | v0.2 | 改为每类别单一 JSON 文件,移除 manifest                                         |
+| 2026-07-22 | v0.3 | 官方配置改为 PostgreSQL 存储;JSON 文件方案废弃;明确用户方案=排除列表的预留边界 |

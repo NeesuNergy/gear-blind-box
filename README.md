@@ -14,9 +14,8 @@ GearBlindBox/
 ├── packages/
 │   ├── scoring-engine/       # 评分引擎(纯函数,骨架阶段)
 │   └── shared-types/         # 前后端共享类型
-├── configs/game-data/         # 装备/干员配置数据(版本化 JSON)
-├── prisma/schema.prisma        # 数据库模型定义
-├── scripts/                    # 工程脚本(如配置校验)
+├── prisma/                    # Schema / 迁移 / 官方配置 seed
+├── scripts/                    # 工程脚本(如 seed 约束校验)
 └── docs/                       # 产品与工程文档
 ```
 
@@ -41,24 +40,26 @@ docker compose up -d
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env.local
 
-# 4. 生成 Prisma Client
+# 4. 生成 Prisma Client 并迁移 + 写入官方配置 seed
 pnpm db:generate
+pnpm db:migrate:dev
+pnpm db:seed
 
-# 5. 启动开发服务器
-pnpm dev:api   # http://localhost:3000
-pnpm dev:web   # http://localhost:3001(或 Next.js 默认端口)
+# 5. 启动开发服务器(前后端各开一个终端,分别执行)
+pnpm dev:web   # http://localhost:3000 (Next.js 默认端口)
+pnpm dev:api   # http://localhost:3001
 ```
 
 ## 常用脚本
 
-| 命令                                                          | 说明                                           |
-| ------------------------------------------------------------- | ---------------------------------------------- |
-| `pnpm lint`                                                   | 对所有 workspace 包运行 ESLint                 |
-| `pnpm typecheck`                                              | 对所有 workspace 包运行 TypeScript 类型检查    |
-| `pnpm test`                                                   | 对所有 workspace 包运行单元测试                |
-| `pnpm build`                                                  | 构建所有 workspace 包                          |
-| `pnpm config:validate`                                        | 校验 `configs/game-data` 下的装备/干员配置数据 |
-| `pnpm db:generate` / `pnpm db:migrate:dev` / `pnpm db:studio` | Prisma 相关操作                                |
+| 命令                                                                           | 说明                                         |
+| ------------------------------------------------------------------------------ | -------------------------------------------- |
+| `pnpm lint`                                                                    | 对所有 workspace 包运行 ESLint               |
+| `pnpm typecheck`                                                               | 对所有 workspace 包运行 TypeScript 类型检查  |
+| `pnpm test`                                                                    | 对所有 workspace 包运行单元测试              |
+| `pnpm build`                                                                   | 构建所有 workspace 包                        |
+| `pnpm config:validate`                                                         | 校验官方配置 seed 数据约束(见 CONFIG-SCHEMA) |
+| `pnpm db:generate` / `pnpm db:migrate:dev` / `pnpm db:seed` / `pnpm db:studio` | Prisma 相关操作                              |
 
 ## 开发规范
 

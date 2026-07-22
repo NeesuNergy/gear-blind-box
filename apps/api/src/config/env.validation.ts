@@ -6,7 +6,8 @@ import { z } from 'zod';
  */
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  PORT: z.coerce.number().int().positive().default(3000),
+  // 3000 已被 apps/web(Next.js 默认端口)占用,API 固定使用 3001
+  PORT: z.coerce.number().int().positive().default(3001),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL 不能为空'),
   REDIS_URL: z.string().min(1, 'REDIS_URL 不能为空'),
 });

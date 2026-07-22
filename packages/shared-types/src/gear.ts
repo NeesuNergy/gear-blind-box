@@ -1,5 +1,5 @@
 /**
- * 对应 docs/03-spec/DATA-MODEL.md 第 2 节 与 docs/03-spec/CONFIG-SCHEMA.md。
+ * 对应 docs/03-spec/DATA-MODEL.md 与 docs/03-spec/CONFIG-SCHEMA.md。
  * 仅为类型契约,不包含任何业务逻辑。
  */
 
@@ -7,7 +7,11 @@ export type GearCategory = 'weapon' | 'helmet' | 'armor' | 'operator';
 
 export type GearRarity = 'common' | 'rare' | 'epic' | 'legendary';
 
-/** 武器/头盔/护甲/干员通用结构,来自版本化配置文件(configs/game-data),非数据库表。 */
+/**
+ * 武器/头盔/护甲/干员通用结构。
+ * 持久化在 PostgreSQL `gear_items`;`versionTag` 由加载服务根据 `config_revisions` 注入到内存对象,
+ * 便于写入 DrawRecord 快照,不一定作为表列存在。
+ */
 export interface GearItem {
   id: string;
   category: GearCategory;
@@ -31,23 +35,15 @@ export interface ScoreWeightConfig {
   operatorWeight: number;
 }
 
-/** 各类别当前生效的配置版本号(见 CONFIG-SCHEMA.md 第 2.3 节)。 */
-export interface ConfigActiveVersions {
-  weapons: string;
-  helmets: string;
-  armors: string;
-  operators: string;
-  weights: string;
-}
-
-export interface ConfigManifestHistoryEntry {
-  category: GearCategory | 'weights';
-  versionTag: string;
-  publishedAt: string;
-  note: string;
-}
-
-export interface ConfigManifest {
-  activeVersions: ConfigActiveVersions;
-  history: ConfigManifestHistoryEntry[];
+/**
+ * 后续用户方案(V0.1 不实现):相对官方默认池的排除列表。
+ * 不可改 baseScore。
+ */
+export interface UserScheme {
+  id: string;
+  ownerUserId: string;
+  name: string;
+  excludedItemIds: string[];
+  shareCode: string;
+  basedOnVersionTag?: string;
 }

@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import type { ConfigManifest, GearItem, ScoreWeightConfig } from '@gearblindbox/shared-types';
+import type { GearItem, ScoreWeightConfig } from '@gearblindbox/shared-types';
 
 export interface GearConfigSnapshot {
-  configVersion: ConfigManifest['activeVersions'];
+  /** 当前官方 config_revisions.versionTag */
+  configVersion: string;
   weights: ScoreWeightConfig;
   scoreBounds: { min: number; max: number };
   items: Record<'weapons' | 'helmets' | 'armors' | 'operators', GearItem[]>;
@@ -11,13 +12,13 @@ export interface GearConfigSnapshot {
 /**
  * 装备/干员配置加载与查询服务(骨架阶段)。
  *
- * 完整实现应按 docs/03-spec/CONFIG-SCHEMA.md:
- * 1. 读取 configs/game-data/manifest.json 确定各类别当前生效版本
- * 2. 加载对应版本的 JSON 文件并按 CONFIG-SCHEMA.md 的 Schema 校验
- * 3. 计算 scoreBounds(当前配置下理论可达成的最小/最大综合评分)
- * 4. 配置变更后主动失效 Redis 中的预筛索引缓存(见 ARCHITECTURE.md 第 6 节)
+ * 完整实现应按 docs/03-spec/CONFIG-SCHEMA.md / ADR-0002:
+ * 1. 从 PostgreSQL 读取 gear_items / score_weight_configs / config_revisions
+ * 2. 组装 EffectivePool = 官方 enabled 条目 − (未来)用户方案 excludedItemIds
+ * 3. 计算 scoreBounds(当前有效池下理论可达成的最小/最大综合评分)
+ * 4. 配置 versionTag 变更后主动失效 Redis 预筛索引缓存
  *
- * 当前阶段仅搭建骨架,不接入文件加载与校验逻辑。
+ * 当前阶段仅搭建骨架,不接入数据库加载逻辑。
  */
 @Injectable()
 export class GearConfigService {

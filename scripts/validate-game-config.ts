@@ -1,61 +1,26 @@
 /**
- * 配置文件校验脚本。
- * 对应 docs/03-spec/CONFIG-SCHEMA.md 第 3 节"CI 自动校验"要求。
+ * 官方配置 seed 约束校验。
+ * 对应 docs/03-spec/CONFIG-SCHEMA.md 第 3 节。
  *
  * 校验内容:
- * 1. weapons/helmets/armors/operators 下每个文件符合 gear-item-list.schema.json
- * 2. weights 下每个文件符合 score-weight-config.schema.json,且四项权重之和为 1(±0.001)
- * 3. manifest.json 符合 manifest.schema.json,且引用的版本号对应的文件必须存在
- * 4. 每个类别文件内 id 字段全局唯一
+ * 1. gear item 字段合法性(id / category / baseScore / weight)
+ * 2. id 唯一;每类至少 1 条(骨架阶段允许 enabled=false)
+ * 3. 权重之和为 1(±0.001);versionTag 格式
  *
  * 用法:pnpm config:validate
  */
-import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
-import Ajv, { type ValidateFunction } from 'ajv';
-import addFormats from 'ajv-formats';
+import {
+  OFFICIAL_VERSION_TAG,
+  OFFICIAL_WEIGHTS,
+  SEED_GEAR_ITEMS,
+  type SeedGearCategory,
+  type SeedGearItem,
+} from '../prisma/seed-data';
 
-const ROOT = join(__dirname, '..');
-const GAME_DATA_DIR = join(ROOT, 'configs', 'game-data');
-const SCHEMAS_DIR = join(GAME_DATA_DIR, 'schemas');
-
-const GEAR_CATEGORIES = ['weapons', 'helmets', 'armors', 'operators'] as const;
 const WEIGHT_SUM_TOLERANCE = 0.001;
-
-const ajv = new Ajv({ allErrors: true });
-addFormats(ajv);
-
-function loadJson<T>(path: string): T {
-  return JSON.parse(readFileSync(path, 'utf-8')) as T;
-}
-
-function compileSchema(fileName: string): ValidateFunction {
-  const schema = loadJson<Record<string, unknown>>(join(SCHEMAS_DIR, fileName));
-  return ajv.compile(schema);
-}
-
-interface GearItem {
-  id: string;
-  [key: string]: unknown;
-}
-
-interface GearItemList {
-  versionTag: string;
-  items: GearItem[];
-}
-
-interface ScoreWeightConfig {
-  versionTag: string;
-  weaponWeight: number;
-  helmetWeight: number;
-  armorWeight: number;
-  operatorWeight: number;
-}
-
-interface ConfigManifest {
-  activeVersions: Record<string, string>;
-  history: Array<{ category: string; versionTag: string; publishedAt: string; note: string }>;
-}
+const ID_PATTERN = /^[a-z]+_[a-z0-9_]+$/;
+const VERSION_TAG_PATTERN = /^\d{4}\.\d{2}(\.\d+)?$/;
+const CATEGORIES: SeedGearCategory[] = ['weapon', 'helmet', 'armor', 'operator'];
 
 let hasError = false;
 
@@ -68,103 +33,81 @@ function reportOk(message: string): void {
   console.log(`✓ ${message}`);
 }
 
-function validateGearCategory(category: string, validate: ValidateFunction): void {
-  const dir = join(GAME_DATA_DIR, category);
-  const files = readdirSync(dir).filter((f) => f.endsWith('.json'));
-
-  for (const file of files) {
-    const filePath = join(dir, file);
-    const data = loadJson<GearItemList>(filePath);
-
-    if (!validate(data)) {
-      reportError(
-        `${category}/${file} 未通过 gear-item-list.schema.json 校验:\n${ajv.errorsText(validate.errors, { separator: '\n' })}`,
-      );
-      continue;
-    }
-
-    const ids = data.items.map((item) => item.id);
-    const duplicateIds = ids.filter((id, index) => ids.indexOf(id) !== index);
-    if (duplicateIds.length > 0) {
-      reportError(`${category}/${file} 存在重复的 id: ${[...new Set(duplicateIds)].join(', ')}`);
-      continue;
-    }
-
-    reportOk(`${category}/${file} 通过校验(${data.items.length} 条数据)`);
-  }
-}
-
-function validateWeights(validate: ValidateFunction): void {
-  const dir = join(GAME_DATA_DIR, 'weights');
-  const files = readdirSync(dir).filter((f) => f.endsWith('.json'));
-
-  for (const file of files) {
-    const filePath = join(dir, file);
-    const data = loadJson<ScoreWeightConfig>(filePath);
-
-    if (!validate(data)) {
-      reportError(
-        `weights/${file} 未通过 score-weight-config.schema.json 校验:\n${ajv.errorsText(validate.errors, { separator: '\n' })}`,
-      );
-      continue;
-    }
-
-    const sum = data.weaponWeight + data.helmetWeight + data.armorWeight + data.operatorWeight;
-    if (Math.abs(sum - 1) > WEIGHT_SUM_TOLERANCE) {
-      reportError(
-        `weights/${file} 四项权重之和为 ${sum},应为 1(允许误差 ±${WEIGHT_SUM_TOLERANCE})`,
-      );
-      continue;
-    }
-
-    reportOk(`weights/${file} 通过校验(权重之和 = ${sum})`);
-  }
-}
-
-function validateManifest(validate: ValidateFunction): void {
-  const manifestPath = join(GAME_DATA_DIR, 'manifest.json');
-  const manifest = loadJson<ConfigManifest>(manifestPath);
-
-  if (!validate(manifest)) {
+function validateVersionTag(): void {
+  if (!VERSION_TAG_PATTERN.test(OFFICIAL_VERSION_TAG)) {
     reportError(
-      `manifest.json 未通过 manifest.schema.json 校验:\n${ajv.errorsText(validate.errors, { separator: '\n' })}`,
+      `OFFICIAL_VERSION_TAG="${OFFICIAL_VERSION_TAG}" 不符合 ^\\d{4}\\.\\d{2}(\\.\\d+)?$`,
     );
     return;
   }
+  reportOk(`versionTag = ${OFFICIAL_VERSION_TAG}`);
+}
 
-  const categoryToDir: Record<string, string> = {
-    weapons: 'weapons',
-    helmets: 'helmets',
-    armors: 'armors',
-    operators: 'operators',
-    weights: 'weights',
-  };
+function validateWeights(): void {
+  const { weaponWeight, helmetWeight, armorWeight, operatorWeight } = OFFICIAL_WEIGHTS;
+  for (const [name, value] of Object.entries(OFFICIAL_WEIGHTS)) {
+    if (value < 0 || value > 1) {
+      reportError(`${name}=${value} 必须在 [0, 1]`);
+    }
+  }
+  const sum = weaponWeight + helmetWeight + armorWeight + operatorWeight;
+  if (Math.abs(sum - 1) > WEIGHT_SUM_TOLERANCE) {
+    reportError(`四项权重之和为 ${sum},应为 1(允许误差 ±${WEIGHT_SUM_TOLERANCE})`);
+    return;
+  }
+  reportOk(`weights 通过校验(权重之和 = ${sum})`);
+}
 
-  for (const [category, versionTag] of Object.entries(manifest.activeVersions)) {
-    const dir = categoryToDir[category];
-    const expectedFile = join(GAME_DATA_DIR, dir, `${versionTag}.json`);
-    try {
-      readFileSync(expectedFile);
-    } catch {
-      reportError(
-        `manifest.json 中 activeVersions.${category} 指向的版本 "${versionTag}" 找不到对应文件:${expectedFile}`,
-      );
+function validateGearItems(): void {
+  if (SEED_GEAR_ITEMS.length === 0) {
+    reportError('SEED_GEAR_ITEMS 不能为空');
+    return;
+  }
+
+  const ids = SEED_GEAR_ITEMS.map((item) => item.id);
+  const duplicateIds = ids.filter((id, index) => ids.indexOf(id) !== index);
+  if (duplicateIds.length > 0) {
+    reportError(`存在重复的 id: ${[...new Set(duplicateIds)].join(', ')}`);
+  }
+
+  const byCategory = new Map<SeedGearCategory, SeedGearItem[]>();
+  for (const category of CATEGORIES) {
+    byCategory.set(category, []);
+  }
+
+  for (const item of SEED_GEAR_ITEMS) {
+    if (!ID_PATTERN.test(item.id)) {
+      reportError(`id="${item.id}" 不符合 ^[a-z]+_[a-z0-9_]+$`);
+    }
+    if (!CATEGORIES.includes(item.category)) {
+      reportError(`id="${item.id}" 的 category="${item.category}" 非法`);
+    }
+    if (!Number.isInteger(item.baseScore) || item.baseScore < 0 || item.baseScore > 100) {
+      reportError(`id="${item.id}" 的 baseScore=${item.baseScore} 必须是 0-100 的整数`);
+    }
+    if (item.weight !== undefined && item.weight <= 0) {
+      reportError(`id="${item.id}" 的 weight=${item.weight} 必须 > 0`);
+    }
+    if (!item.name || item.name.trim().length === 0) {
+      reportError(`id="${item.id}" 的 name 不能为空`);
+    }
+    byCategory.get(item.category)?.push(item);
+  }
+
+  for (const category of CATEGORIES) {
+    const items = byCategory.get(category) ?? [];
+    if (items.length === 0) {
+      reportError(`缺少 category=${category} 的条目`);
       continue;
     }
-    reportOk(`manifest.json activeVersions.${category} = ${versionTag} 对应文件存在`);
+    reportOk(`${category}: ${items.length} 条`);
   }
 }
 
 function main(): void {
-  const gearItemListValidate = compileSchema('gear-item-list.schema.json');
-  const weightConfigValidate = compileSchema('score-weight-config.schema.json');
-  const manifestValidate = compileSchema('manifest.schema.json');
-
-  for (const category of GEAR_CATEGORIES) {
-    validateGearCategory(category, gearItemListValidate);
-  }
-  validateWeights(weightConfigValidate);
-  validateManifest(manifestValidate);
+  validateVersionTag();
+  validateWeights();
+  validateGearItems();
 
   if (hasError) {
     console.error('\n配置校验失败,详见上方错误信息。');

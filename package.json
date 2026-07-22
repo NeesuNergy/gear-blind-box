@@ -19,15 +19,18 @@
     "config:validate": "tsx scripts/validate-game-config.ts",
     "db:generate": "pnpm --filter @gearblindbox/api run db:generate",
     "db:migrate:dev": "pnpm --filter @gearblindbox/api run db:migrate:dev",
+    "db:seed": "tsx prisma/seed.ts",
     "db:studio": "pnpm --filter @gearblindbox/api run db:studio",
     "prepare": "husky"
+  },
+  "prisma": {
+    "schema": "prisma/schema.prisma",
+    "seed": "tsx prisma/seed.ts"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.5.0",
     "@commitlint/config-conventional": "^19.5.0",
     "@eslint/js": "^9.15.0",
-    "ajv": "^8.17.1",
-    "ajv-formats": "^3.0.1",
     "eslint": "^9.15.0",
     "eslint-config-prettier": "^9.1.0",
     "globals": "^15.12.0",

@@ -1,7 +1,7 @@
 // Prisma Schema
-// 对应 docs/03-spec/DATA-MODEL.md 第 3 节"运行时数据实体"。
-// GearItem / ScoreWeightConfig / ConfigManifest 属于配置数据(见 DATA-MODEL.md 第 2 节),
-// 存放于 configs/game-data 的版本化 JSON 文件中,不在此建表。
+// 对应 docs/03-spec/DATA-MODEL.md。
+// 官方装备配置存 DB(见 ADR-0002 / CONFIG-SCHEMA.md v0.3)。
+// UserScheme 为后续版本预留,V0.1 不建表。
 
 generator client {
   provider = "prisma-client-js"
@@ -12,17 +12,57 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/// 官方配置版本标签单例(id 固定为 "official")。
+model ConfigRevision {
+  id         String   @id
+  versionTag String   @map("version_tag")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("config_revisions")
+}
+
+/// 官方默认装备/干员池。
+model GearItem {
+  id          String  @id
+  category    String
+  name        String
+  subCategory String? @map("sub_category")
+  baseScore   Int     @map("base_score")
+  rarity      String?
+  weight      Float   @default(1)
+  imageUrl    String? @map("image_url")
+  description String?
+  enabled     Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([category, enabled])
+  @@map("gear_items")
+}
+
+/// 官方评分权重单例(id 固定为 "official")。
+model ScoreWeightConfig {
+  id             String @id
+  weaponWeight   Float  @map("weapon_weight")
+  helmetWeight   Float  @map("helmet_weight")
+  armorWeight    Float  @map("armor_weight")
+  operatorWeight Float  @map("operator_weight")
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("score_weight_configs")
+}
+
 /// 一次抽取的完整记录,存储装备快照而非引用,保证历史结果不受后续配置变更影响。
-/// 见 DATA-MODEL.md 3.1 节。
 model DrawRecord {
   id          String @id @default(uuid())
   anonymousId String @map("anonymous_id")
   sessionId   String @map("session_id")
 
-  /// 抽取发生时生效的配置版本号(快照依据)
+  /// 抽取发生时生效的官方 config_revisions.versionTag
   configVersion String @map("config_version")
 
-  /// 四个槶位的装备快照(完整复制当时的 GearItem 内容)
   weaponItem   Json @map("weapon_item")
   helmetItem   Json @map("helmet_item")
   armorItem    Json @map("armor_item")
@@ -34,7 +74,6 @@ model DrawRecord {
   operatorScore Int @map("operator_score")
   totalScore    Int @map("total_score")
 
-  /// 用户当时设定的评分区间,为空表示未设定(全区间随机)
   selectedMinScore Int? @map("selected_min_score")
   selectedMaxScore Int? @map("selected_max_score")
 
@@ -45,17 +84,15 @@ model DrawRecord {
   @@index([createdAt])
 }
 
-/// 埋点原始事件,见 DATA-MODEL.md 3.2 节 与 docs/03-spec/ANALYTICS-SPEC.md。
+/// 埋点原始事件。
 model AnalyticsEvent {
   id          String @id @default(uuid())
   eventName   String @map("event_name")
   anonymousId String @map("anonymous_id")
   sessionId   String @map("session_id")
 
-  /// 结构随 eventName 不同而不同,见 ANALYTICS-SPEC.md 第 3 节事件清单
   properties Json? @map("properties")
 
-  /// 原始 IP 不落库,只存哈希值(隐私合规要求,见 ANALYTICS-SPEC.md 第 6 节)
   ipHash    String? @map("ip_hash")
   userAgent String? @map("user_agent")
 
@@ -66,7 +103,7 @@ model AnalyticsEvent {
   @@index([eventName, createdAt])
 }
 
-/// 每日聚合指标,由定时任务写入,见 DATA-MODEL.md 3.3 节 与 ANALYTICS-SPEC.md 第 1/5 节口径定义。
+/// 每日聚合指标。
 model DailyMetricSummary {
   date DateTime @id @db.Date
 
