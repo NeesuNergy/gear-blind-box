@@ -27,6 +27,9 @@
     "schema": "prisma/schema.prisma",
     "seed": "tsx prisma/seed.ts"
   },
+  "dependencies": {
+    "@prisma/client": "^5.20.0"
+  },
   "devDependencies": {
     "@commitlint/cli": "^19.5.0",
     "@commitlint/config-conventional": "^19.5.0",

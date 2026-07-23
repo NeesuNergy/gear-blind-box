@@ -9,7 +9,7 @@ export class GearConfigController {
   constructor(private readonly gearConfigService: GearConfigService) {}
 
   @Get()
-  getCurrentConfig(): GearConfigSnapshot {
+  getCurrentConfig(): Promise<GearConfigSnapshot> {
     return this.gearConfigService.getCurrentConfig();
   }
 }

@@ -5,6 +5,14 @@
 
 export type GearCategory = 'weapon' | 'helmet' | 'armor' | 'operator';
 
+/** GearCategory 的运行时枚举值,供遍历四个槶位、DTO 校验等场景使用,需与上方联合类型保持同步。 */
+export const GEAR_CATEGORIES: readonly GearCategory[] = [
+  'weapon',
+  'helmet',
+  'armor',
+  'operator',
+] as const;
+
 export type GearRarity = 'common' | 'rare' | 'epic' | 'legendary';
 
 /**
