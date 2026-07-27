@@ -15,6 +15,7 @@ export interface CombinationItemResult {
   id: string;
   name: string;
   score: number;
+  imageUrl: string;
 }
 
 export type Combination = Record<GearCategory, CombinationItemResult>;

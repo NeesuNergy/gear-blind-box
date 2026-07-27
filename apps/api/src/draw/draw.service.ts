@@ -9,7 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { DrawRequestDto } from './dto/draw-request.dto';
 
 function toCombinationItemResult(item: GearItem): CombinationItemResult {
-  return { id: item.id, name: item.name, score: item.baseScore };
+  return { id: item.id, name: item.name, score: item.baseScore, imageUrl: item.imageUrl ?? '' };
 }
 
 /**
